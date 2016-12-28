@@ -1,5 +1,3 @@
-{-# OPTIONS --rewriting #-}
-
 module machine where
 
 open import Prelude.Path
