@@ -1,0 +1,4 @@
+name: zipper-machine
+include:
+  src
+  modules/agda-prelude/src
