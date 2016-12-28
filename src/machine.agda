@@ -13,20 +13,21 @@ open import Prelude.Bool
 open import Prelude.Decidable
 open import Prelude.Stream
 
-module Plug {S O} (⊢Σ : Sig S O) (ar/≡? : (j : O) (ϑ : op ⊢Σ j) (α β : ar ⊢Σ (j ▸ ϑ)) → Decidable (α ≡ β)) where
+module Plug {S O} (⊢Σ : Sig S O) (ar/≡? : {j : O} (ϑ : op ⊢Σ j) (α β : ar ⊢Σ (j ▸ ϑ)) → Decidable (α ≡ β)) where
   plug : ∀ {i j X} → ⟦ ∇ ⊢Σ ⟧◃ X (j , i) → X i → ⟦ ⊢Σ ⟧◃ X j
   plug {X = X} ((ϑ ▸ α ▸ p) ▸ tail) x = ϑ ▸ aux
     where
       aux : (β : ar ⊢Σ (_ ▸ ϑ)) → X (so ⊢Σ ((_ ▸ ϑ) ▸ β))
-      aux β with ar/≡? _ ϑ α β
+      aux β with ar/≡? ϑ α β
       aux β | ⊕.inl p = tail (β ▸ p)
       aux β | ⊕.inr p′ = ≡.coe* X (p ≡.⁻¹ ≡.⟓ _ ≡.· p′) x
 
-module Unload {S} (⊢Σ : Sig S S) (ar/≡? : (i : S) (ϑ : op ⊢Σ i) (α β : ar ⊢Σ (i ▸ ϑ)) → Decidable (α ≡ β)) where
+module Unload {S} (⊢Σ : Sig S S) (ar/≡? : {i : S} (ϑ : op ⊢Σ i) (α β : ar ⊢Σ (i ▸ ϑ)) → Decidable (α ≡ β)) where
+  open Plug ⊢Σ ar/≡?
   unload : {i j : S} → W.W (Zipper ⊢Σ) (i , j) → W.W ⊢Σ j → W.W ⊢Σ i
   unload (W.sup (⊕.inl refl) tail) t = t
   unload (W.sup (⊕.inr (_ ▸ c)) tail) t =
-    let hd ▸ tl = Plug.plug ⊢Σ ar/≡? {X = W.W ⊢Σ} c t
+    let hd ▸ tl = plug {X = W.W ⊢Σ} c t
     in unload (tail *) (W.sup hd tl)
 
 data ⊢Λ/Sort : Set where
@@ -60,6 +61,17 @@ so ⊢Λ (((𝒳 ⊢ .exp) ▸ ap) ▸ fun) = 𝒳 ⊢ exp
 so ⊢Λ (((𝒳 ⊢ .exp) ▸ ap) ▸ arg) = 𝒳 ⊢ exp
 so ⊢Λ (((𝒳 ⊢ .exp) ▸ ret) ▸ *) = 𝒳 ⊢ val
 
+⊢Λ/ar≡? : {j : _} (ϑ : op ⊢Λ j) (α β : ar ⊢Λ (j ▸ ϑ)) → Decidable (α ≡ β)
+⊢Λ/ar≡? (var x) () β
+⊢Λ/ar≡? lam _ _ = ⊕.inr refl
+⊢Λ/ar≡? ap fun fun = ⊕.inr refl
+⊢Λ/ar≡? ap fun arg = ⊕.inl λ { () }
+⊢Λ/ar≡? ap arg fun = ⊕.inl λ { () }
+⊢Λ/ar≡? ap arg arg = ⊕.inr refl
+⊢Λ/ar≡? ret _ _ = ⊕.inr refl
+
+module ⊢Λ/Unload = Unload ⊢Λ ⊢Λ/ar≡?
+
 Tm : ⊢Λ/Seq → Set
 Tm = W.W ⊢Λ
 
@@ -69,14 +81,11 @@ Exp 𝒳 = Tm (𝒳 ⊢ exp)
 Val : Nat → Set
 Val 𝒳 = Tm (𝒳 ⊢ val)
 
-
 `var : ∀ {𝒳} → Fin 𝒳 → Val 𝒳
 `var x = W.sup (var x) (λ α → 𝟘.¡ α)
 
-
 `ap : ∀ {𝒳} → Exp 𝒳 → Exp 𝒳 → Exp 𝒳
 `ap m n = W.sup ap λ { fun → m ; arg → n }
-
 
 `lam : ∀ {𝒳} → Exp (su 𝒳) → Val 𝒳
 `lam m = W.sup lam λ { * → m }
@@ -100,54 +109,69 @@ inst (W.sup ret ρ) v = `ret (inst (ρ *) v)
 Stk : Set
 Stk = W.W (Zipper ⊢Λ) (0 ⊢ exp , 0 ⊢ exp)
 
+-- Patterns for control stacks
+pattern nil ρ = W.sup (⊕.inl refl) ρ
+pattern _[_,_]_∷_ ϑ α p ρ stk = W.sup (⊕.inr (_ ⊢ _ ▸ (ϑ ▸ (α ▸ p)) ▸ ρ)) stk
 
+-- Some shortcuts for pushing stack frames
+ap[-,_]∷_ : Exp 0 → Stk → Stk
+ap[-, m ]∷ stk = ap [ fun , refl ] (λ { (fun ▸ ✠) → 𝟘.¡ (✠ refl) ; (arg ▸ _) → m }) ∷ λ _ → stk
+
+ap[_,-]∷_ : Val 0 → Stk → Stk
+ap[ v ,-]∷ stk = ap [ arg , refl ] (λ { (fun ▸ _) → `ret v ; (arg ▸ ✠) → 𝟘.¡ (✠ refl) }) ∷ λ _ → stk
+
+-- Machine configurations
 data Cfg : Set where
   _◁_ : (m : Exp 0) → (stk : Stk) → Cfg
-  _▷_ : (m : Val 0) → (stk : Stk) → Cfg
+  _▷_ : (v : Val 0) → (stk : Stk) → Cfg
 
 infixr 4 _◁_ _▷_
 infix 0 go_
 
-data Step (A B : Set) : Set where
-  go_ : A → Step A B
-  return : B → Step A B
-  stuck : Step A B
+data Step : Set where
+  go_ : Cfg → Step
+  retn_ : Val 0 → Step
+  stuck_ : Cfg → Step
 
-pattern _[_,_]_∷_ ϑ α p ρ stk = W.sup (⊕.inr (_ ⊢ _ ▸ (ϑ ▸ (α ▸ p)) ▸ ρ)) stk
-pattern nil ρ = W.sup (⊕.inl refl) ρ
-
-κ : {X Y : Set} → X → Y → X
-κ x _ = x
-
-step : Cfg → Step Cfg (Val 0)
-step (W.sup ap ρ ◁ stk) = go ρ fun ◁ ap [ fun , refl ] (λ { (fun ▸ ✠) → 𝟘.¡ (✠ refl) ; (arg ▸ _) → ρ arg }) ∷ (κ stk)
+step : Cfg → Step
+step (W.sup ap ρ ◁ stk) = go ρ fun ◁ ap[-, ρ arg ]∷ stk
 step (W.sup ret ρ ◁ stk) = go ρ * ▷ stk
-step (m ▷ nil _) = return m
-step (m ▷ ap [ fun , refl ] ρ ∷ stk) = go ρ (arg ▸ λ { () }) ◁ ap [ arg , refl ] (λ { (fun ▸ _) → `ret m ; (arg ▸ ✠) → 𝟘.¡ (✠ refl) }) ∷ stk
-step (m ▷ ap [ arg , refl ] ρ ∷ stk) with ρ (fun ▸ λ { () })
-... | W.sup ap _ = stuck
+step (v ▷ nil _) = retn v
+step (v ▷ ap [ fun , refl ] ρ ∷ stk) = go ρ (arg ▸ λ { () }) ◁ ap[ v ,-]∷ stk *
+step (v ▷ ap [ arg , refl ] ρ ∷ stk) with ρ (fun ▸ λ { () })
+... | W.sup ap _ = stuck (v ▷ ap [ arg , refl ] ρ ∷ stk)
 ... | W.sup ret ret/ρ with ret/ρ *
+... | W.sup lam lam/ρ = go inst (lam/ρ *) v ◁ stk *
 ... | W.sup (var ()) tail
-... | W.sup lam lam/ρ = go inst (lam/ρ *) m ◁ stk *
-step (m ▷ var _ [ () , _ ] _ ∷ _)
-step (m ▷ lam [ _ , () ] _ ∷ _)
-step (m ▷ ret [ _ , () ] _ ∷ _)
+step (v ▷ var _ [ () , _ ] _ ∷ _)
+step (v ▷ lam [ _ , () ] _ ∷ _)
+step (v ▷ ret [ _ , () ] _ ∷ _)
 
-step* : Step Cfg (Val 0) → Step Cfg (Val 0)
+step* : Step → Step
 step* (go x) = step x
-step* (return v) = return v
-step* stuck = stuck
+step* (retn v) = retn v
+step* (stuck e) = stuck e
+
+cfg/unload : Cfg → Exp 0
+cfg/unload (m ◁ stk) = ⊢Λ/Unload.unload stk m
+cfg/unload (v ▷ stk) = ⊢Λ/Unload.unload stk (`ret v)
+
+step/unload : Step → Exp 0
+step/unload (go 𝒞) = cfg/unload 𝒞
+step/unload (retn v) = `ret v
+step/unload (stuck 𝒞) = cfg/unload 𝒞
 
 init : Exp 0 → Cfg
 init m = m ◁ nil λ { () }
 
-steps : Cfg → Stream (Step Cfg (Val 0))
+steps : Cfg → Stream Step
 steps 𝒞 = Stream.unfold (go 𝒞) (λ 𝒞′ → 𝒞′ , step* 𝒞′)
 
-eval : Exp 0 → Stream (Step Cfg (Val 0))
+eval : Exp 0 → Stream Step
 eval e = steps (init e)
 
-[id] : ∀ {𝒳} → Val 𝒳
-[id] = `lam (`ret (`var ze))
+module Ex where
+  [id] : ∀ {𝒳} → Exp 𝒳
+  [id] = `ret (`lam (`ret (`var ze)))
 
-test = Stream.idx (eval (`ap (`ret [id]) (`ret [id]))) 100
+  test = step/unload (Stream.idx (eval (`ap [id] [id])) 10)
