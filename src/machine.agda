@@ -33,11 +33,15 @@ module Unload {S} (⊢Σ : Sig S S) (ar/≡? : {i : S} (ϑ : op ⊢Σ i) (α β 
     let hd ▸ tl = plug {X = W.W ⊢Σ} c t
     in unload (tail *) (W.sup hd tl)
 
-
+-- Developing the syntax of a fine-grained call-by-value lambda calculus
+-- using indexed containers.
 module Λ where
+  -- We have two sorts, expressions and values.
   data Sort : Set where
     exp val : Sort
 
+  -- Terms are classified by sequents 𝒳 ⊢ τ, where 𝒳 is the
+  -- number of free variables. Variables always denote *values*.
   record Seq : Set where
     no-eta-equality
     constructor _⊢_
@@ -68,6 +72,8 @@ module Λ where
   so sig (((𝒳 ⊢ .exp) ▸ ap) ▸ arg) = 𝒳 ⊢ exp
   so sig (((𝒳 ⊢ .exp) ▸ ret) ▸ *) = 𝒳 ⊢ val
 
+  -- In order to plug something into a term zipper, the addresses of
+  -- subterms need to have decidable equality.
   ar≡? : {j : _} (ϑ : op sig j) (α β : ar sig (j ▸ ϑ)) → Decidable (α ≡ β)
   ar≡? (var x) () β
   ar≡? lam _ _ = ⊕.inr refl
@@ -120,9 +126,9 @@ module Λ where
 open Λ.Notation
 open Λ using (ap; fun; arg; lam; var; ret; exp; val; _⊢_)
 
+-- Control stacks
 Stk : Set
 Stk = W.W (Zipper Λ.sig) (0 ⊢ exp , 0 ⊢ exp)
-
 
 -- Patterns for control stacks
 pattern nil ρ = W.sup (⊕.inl refl) ρ
@@ -139,7 +145,10 @@ ap[ v ,-]∷ stk = ap [ arg , refl ] (λ { (fun ▸ _) → `ret v ; (arg ▸ ✠
 
 -- Machine configurations
 data Cfg : Set where
+  -- Compute the value of a program
   _◁_ : (m : Exp 0) → (stk : Stk) → Cfg
+
+  -- Return the value of a program
   _▷_ : (v : Val 0) → (stk : Stk) → Cfg
 
 
