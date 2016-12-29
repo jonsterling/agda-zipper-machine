@@ -4,6 +4,7 @@ open import Prelude.Path
 open import Prelude.Monoidal
 open import Prelude.Signature.Indexed
 open import Prelude.Signature.Indexed.Tree.Wellfounded
+open import Prelude.Signature.Indexed.Tree.Zipper
 open import Prelude.List
 open import Prelude.Natural
 open import Prelude.Finite
@@ -11,25 +12,6 @@ open import Prelude.Bool
 open import Prelude.Decidable
 open import Prelude.Stream
 
--- Thanks to Conor McBride's metaprogramming notes, we have some stuff
--- for plugging a value into a zipper; this can be thought of like unloading
--- a control stack.
-module Plug {S O} (⊢Σ : Sig S O) (ar/≡? : {j : O} (ϑ : op ⊢Σ j) (α β : ar ⊢Σ (j ▸ ϑ)) → Decidable (α ≡ β)) where
-  plug : ∀ {i j X} → ⟦ ∇ ⊢Σ ⟧◃ X (j , i) → X i → ⟦ ⊢Σ ⟧◃ X j
-  plug {X = X} ((ϑ ▸ α ▸ p) ▸ tail) x = ϑ ▸ aux
-    where
-      aux : (β : ar ⊢Σ (_ ▸ ϑ)) → X (so ⊢Σ ((_ ▸ ϑ) ▸ β))
-      aux β with ar/≡? ϑ α β
-      aux β | ⊕.inl p = tail (β ▸ p)
-      aux β | ⊕.inr p′ = ≡.coe* X (p ≡.⁻¹ ≡.⟓ _ ≡.· p′) x
-
-module Unload {S} (⊢Σ : Sig S S) (ar/≡? : {i : S} (ϑ : op ⊢Σ i) (α β : ar ⊢Σ (i ▸ ϑ)) → Decidable (α ≡ β)) where
-  open Plug ⊢Σ ar/≡?
-  unload : {i j : S} → W.W (Zipper ⊢Σ) (i , j) → W.W ⊢Σ j → W.W ⊢Σ i
-  unload (W.sup (⊕.inl refl) tail) t = t
-  unload (W.sup (⊕.inr (_ ▸ c)) tail) t =
-    let hd ▸ tl = plug {X = W.W ⊢Σ} c t
-    in unload (tail *) (W.sup hd tl)
 
 -- Developing the syntax of a fine-grained call-by-value lambda calculus
 -- using indexed containers.
@@ -85,7 +67,7 @@ module Λ where
 
   module Notation where
     Tm : Seq → Set
-    Tm = W.W sig
+    Tm = W sig
 
     Exp : Nat → Set
     Exp 𝒳 = Tm (𝒳 ⊢ exp)
@@ -126,7 +108,7 @@ open Λ using (ap; fun; arg; lam; var; ret; exp; val; _⊢_)
 
 -- Control stacks
 Stk : Set
-Stk = W.W (Zipper Λ.sig) (0 ⊢ exp , 0 ⊢ exp)
+Stk = W (Zipper Λ.sig) (0 ⊢ exp , 0 ⊢ exp)
 
 -- Patterns for control stacks
 pattern nil ρ = W.sup (⊕.inl refl) ρ
